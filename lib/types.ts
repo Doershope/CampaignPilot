@@ -105,6 +105,38 @@ export type Kpi = {
   description: string;
 };
 
+export const AI_REVIEW_DIMENSIONS = [
+  { id: "goal", label: "目标匹配度" },
+  { id: "channel", label: "渠道适配度" },
+  { id: "budget", label: "预算可执行性" },
+  { id: "brand", label: "品牌一致性" },
+] as const;
+
+export type AiReviewDimensionId = (typeof AI_REVIEW_DIMENSIONS)[number]["id"];
+
+export type AiReviewDimension = {
+  id: AiReviewDimensionId;
+  label: string;
+  score: number;
+  problems: string[];
+  suggestions: string[];
+  evidence: string[];
+};
+
+export type AiReview = {
+  generatedAt: string;
+  dimensions: AiReviewDimension[];
+  overall: number;
+  formula: string;
+  disclaimer: string;
+};
+
+export const AI_REVIEW_FORMULA =
+  "总分 =（目标匹配度 + 渠道适配度 + 预算可执行性 + 品牌一致性）÷ 4，再四舍五入为整数。";
+
+export const AI_REVIEW_DISCLAIMER =
+  "这是 AI 预测性评估，依据的是简报和策略文本，不是真实投放结果，也不能代表转化率或 ROI。";
+
 export type Campaign = {
   generatedAt: string;
   source: GenerationSource;
@@ -125,6 +157,11 @@ export type Store = {
   version: 1;
   brief: Brief | null;
   campaign: Campaign | null;
+  aiReview: AiReview | null;
+  previousCampaign: Campaign | null;
+  previousReview: AiReview | null;
+  changes: string[];
+  optimized: boolean;
 };
 
 export const emptyBrief = (): Brief => ({

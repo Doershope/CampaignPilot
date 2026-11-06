@@ -1,127 +1,42 @@
-import OpenAI from "openai";
-import { scoreBrief } from "@/lib/generate";
-import { briefSchema, type AiCampaignDraft } from "@/lib/campaignSchema";
+import { beginAiCall, finishAiCall, readJson } from "@/lib/aiGuard";
+import { buildAiCampaign } from "@/lib/buildAiCampaign";
+import { briefSchema } from "@/lib/campaignSchema";
+import { aiFailure, createDeepseek, deepseekKey } from "@/lib/deepseek";
 import { missingFieldLabels, normalizeAiCampaign } from "@/lib/normalizeAiCampaign";
-import {
-  BUDGETS,
-  CHANNELS,
-  GOALS,
-  MARKETS,
-  TONES,
-  labelOf,
-  type Brief,
-  type Campaign,
-  type ChannelId,
-} from "@/lib/types";
+import { describeBrief } from "@/lib/review";
 
 export const runtime = "nodejs";
 
-const TIMEOUT_MS = 45_000;
 const MAX_OUTPUT_TOKENS = 2800;
-let inFlight = false;
-
-function publicError(status: number) {
-  if (status === 401 || status === 403) {
-    return "DeepSeek 没有接受当前密钥。请确认密钥已保存在 .env.local，并重启开发服务器。";
-  }
-  if (status === 402) return "DeepSeek 账户余额不足，这次没有生成结果。";
-  if (status === 429) return "DeepSeek 暂时繁忙，请稍后再试。这次没有生成结果。";
-  if (status === 408) return "DeepSeek 响应超时。这次没有生成结果。";
-  return "DeepSeek 暂时不可用。这次没有生成结果。";
-}
-
-function describeBrief(brief: Brief) {
-  return [
-    `产品名称：${brief.productName}`,
-    `产品描述：${brief.productDescription}`,
-    `目标市场：${labelOf(MARKETS, brief.targetMarket)}`,
-    `目标用户：${brief.targetAudience}`,
-    `营销目标：${labelOf(GOALS, brief.marketingGoal)}`,
-    `预算（人民币）：${labelOf(BUDGETS, brief.budget)}`,
-    `品牌语气：${labelOf(TONES, brief.brandTone)}`,
-    `渠道：${brief.channels.map((id) => `${id}=${labelOf(CHANNELS, id)}`).join("，")}`,
-    `输出语言：${brief.outputLanguage === "en" ? "English" : "中文"}`,
-  ].join("\n");
-}
-
-function buildCampaign(brief: Brief, draft: AiCampaignDraft): Campaign {
-  const allowed = new Set<ChannelId>(brief.channels);
-  const channelAdvice = draft.channelAdvice
-    .filter((item) => allowed.has(item.channelId))
-    .map((item) => ({
-      ...item,
-      label: labelOf(CHANNELS, item.channelId),
-    }));
-  const copies = draft.copies.filter((item) => allowed.has(item.id));
-  if (channelAdvice.length === 0 || copies.length === 0) {
-    throw new Error("missing channels");
-  }
-  const { evaluation, overall } = scoreBrief(brief);
-  return {
-    generatedAt: new Date().toISOString(),
-    source: "ai",
-    briefSnapshot: { ...brief, channels: [...brief.channels] },
-    persona: draft.persona,
-    sellingPoints: draft.sellingPoints,
-    channelAdvice,
-    calendar: draft.calendar,
-    copies,
-    actions: draft.actions,
-    kpis: draft.kpis,
-    assumptions: draft.assumptions,
-    evaluation,
-    overall,
-  };
-}
 
 export async function POST(request: Request) {
-  if (inFlight) {
-    return Response.json(
-      { error: "已有一次生成正在进行，请等它结束，避免重复调用。" },
-      { status: 429 },
-    );
-  }
+  const incoming = await readJson(request);
+  if (!incoming.ok) return Response.json({ error: incoming.error }, { status: incoming.status });
 
-  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
-  if (!apiKey) {
+  const parsedBrief = briefSchema.safeParse(incoming.body);
+  if (!parsedBrief.success) {
+    return Response.json({ error: "简报缺少必要内容，或某一项过长。" }, { status: 400 });
+  }
+  if (!deepseekKey()) {
     return Response.json(
       { error: "服务器还没有读到 DeepSeek 密钥。请保存 .env.local 后重启开发服务器。" },
       { status: 500 },
     );
   }
+  const session = createDeepseek();
+  if (!session) return Response.json({ error: "DEEPSEEK_MODEL 的格式无法使用。" }, { status: 500 });
 
-  const model = (process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat").trim();
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(model)) {
-    return Response.json({ error: "DEEPSEEK_MODEL 的格式无法使用。" }, { status: 500 });
-  }
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "简报格式无法读取。" }, { status: 400 });
-  }
-
-  const parsedBrief = briefSchema.safeParse(body);
-  if (!parsedBrief.success) {
-    return Response.json({ error: "简报缺少必要内容，或某一项过长。" }, { status: 400 });
-  }
   const brief = {
     ...parsedBrief.data,
     channels: [...new Set(parsedBrief.data.channels)],
   };
   const language = brief.outputLanguage === "en" ? "English" : "简体中文";
+  const gate = beginAiCall(request);
+  if (!gate.ok) return Response.json({ error: gate.error }, { status: gate.status });
 
-  inFlight = true;
   try {
-    const client = new OpenAI({
-      apiKey,
-      baseURL: "https://api.deepseek.com",
-      timeout: TIMEOUT_MS,
-      maxRetries: 0,
-    });
-    const completion = await client.chat.completions.create({
-      model,
+    const completion = await session.client.chat.completions.create({
+      model: session.model,
       temperature: 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
       response_format: { type: "json_object" },
@@ -174,19 +89,16 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
-    const campaign = buildCampaign(brief, normalized.data);
+    const campaign = buildAiCampaign(brief, normalized.data);
     return Response.json({ campaign });
   } catch (error) {
-    const status = error instanceof OpenAI.APIError ? error.status ?? 500 : 500;
-    const timedOut =
-      error instanceof OpenAI.APIConnectionTimeoutError ||
-      (error instanceof Error && error.name === "AbortError");
-    console.error("DeepSeek request failed", timedOut ? "timeout" : status);
-    return Response.json(
-      { error: publicError(timedOut ? 408 : status) },
-      { status: timedOut ? 504 : status >= 400 && status < 600 ? status : 502 },
-    );
+    if (error instanceof Error && error.message === "missing channels") {
+      console.error("DeepSeek schema mismatch", "channels");
+      return Response.json({ error: "DeepSeek 返回的渠道不在已选范围内。结果未保存。" }, { status: 502 });
+    }
+    const failure = aiFailure(error);
+    return Response.json({ error: failure.error }, { status: failure.status });
   } finally {
-    inFlight = false;
+    finishAiCall();
   }
 }

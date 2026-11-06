@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import { emptyBrief, type Brief, type Campaign, type Store } from "./types";
+import { emptyBrief, type AiReview, type Brief, type Campaign, type Store } from "./types";
 
 const KEY = "campaignpilot.v1";
 const EVENT = "campaignpilot-change";
@@ -10,6 +10,11 @@ const emptyStore = (): Store => ({
   version: 1,
   brief: null,
   campaign: null,
+  aiReview: null,
+  previousCampaign: null,
+  previousReview: null,
+  changes: [],
+  optimized: false,
 });
 
 function normalizeCampaign(campaign: Campaign | null | undefined): Campaign | null {
@@ -37,6 +42,11 @@ function parse(raw: string): Store {
         outputLanguage: parsed.brief.outputLanguage === "en" ? "en" : "zh",
       },
       campaign: normalizeCampaign(parsed.campaign),
+      aiReview: parsed.aiReview ?? null,
+      previousCampaign: normalizeCampaign(parsed.previousCampaign),
+      previousReview: parsed.previousReview ?? null,
+      changes: parsed.changes ?? [],
+      optimized: parsed.optimized === true,
     };
   } catch {
     return emptyStore();
@@ -74,8 +84,57 @@ export function saveStore(store: Store) {
   emit();
 }
 
+function readStore(): Store {
+  if (typeof window === "undefined") return emptyStore();
+  return parse(window.localStorage.getItem(KEY) ?? "");
+}
+
 export function saveBrief(brief: Brief, campaign: Campaign | null) {
-  saveStore({ version: 1, brief, campaign });
+  const current = readStore();
+  const keep = Boolean(campaign && current.campaign?.generatedAt === campaign.generatedAt);
+  saveStore({
+    version: 1,
+    brief,
+    campaign,
+    aiReview: keep ? current.aiReview : null,
+    previousCampaign: keep ? current.previousCampaign : null,
+    previousReview: keep ? current.previousReview : null,
+    changes: keep ? current.changes : [],
+    optimized: keep ? current.optimized : false,
+  });
+}
+
+export function saveGeneratedCampaign(brief: Brief, campaign: Campaign) {
+  saveStore({
+    version: 1,
+    brief,
+    campaign,
+    aiReview: null,
+    previousCampaign: null,
+    previousReview: null,
+    changes: [],
+    optimized: false,
+  });
+}
+
+export function saveAiReview(aiReview: AiReview) {
+  const current = readStore();
+  if (!current.brief || !current.campaign) return;
+  saveStore({ ...current, aiReview });
+}
+
+export function saveOptimization(input: { campaign: Campaign; review: AiReview; changes: string[] }) {
+  const current = readStore();
+  if (!current.brief || !current.campaign || !current.aiReview || current.optimized) return;
+  saveStore({
+    ...current,
+    previousCampaign: current.campaign,
+    previousReview: current.aiReview,
+    campaign: input.campaign,
+    aiReview: input.review,
+    changes: input.changes,
+    optimized: true,
+  });
 }
 
 export function clearStore() {

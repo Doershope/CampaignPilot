@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { DemoNotice } from "@/components/DemoNotice";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { StrategyWorkflow } from "@/components/StrategyWorkflow";
 import { briefsEqual } from "@/lib/generate";
 import { usePersistedStore } from "@/lib/storage";
 import { useCampaign } from "@/lib/useCampaign";
@@ -127,6 +128,16 @@ export default function ResultsPage() {
           {generator.error}
         </div>
       ) : null}
+
+      <StrategyWorkflow
+        campaign={campaign}
+        review={store.aiReview}
+        previousCampaign={store.previousCampaign}
+        previousReview={store.previousReview}
+        changes={store.changes}
+        optimized={store.optimized}
+        stale={stale}
+      />
 
       {stale ? (
         <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">

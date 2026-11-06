@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { GENERATE_STEPS, generateCampaign } from "./generate";
-import { saveStore } from "./storage";
+import { saveGeneratedCampaign } from "./storage";
 import type { Brief, Campaign, GenerationSource } from "./types";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,7 +36,7 @@ export function useCampaign() {
         await wait(520);
       }
       const campaign: Campaign = generateCampaign(brief);
-      saveStore({ version: 1, brief, campaign });
+      saveGeneratedCampaign(brief, campaign);
       if (options.redirect) {
         router.push(options.redirect);
         return campaign;
@@ -64,7 +64,7 @@ export function useCampaign() {
         setLoading(false);
         return null;
       }
-      saveStore({ version: 1, brief, campaign: payload.campaign });
+      saveGeneratedCampaign(brief, payload.campaign);
       if (options.redirect) {
         router.push(options.redirect);
         return payload.campaign;
