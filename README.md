@@ -1,5 +1,6 @@
 # CampaignPilot
 AI-Powered Marketing Campaign Copilot | AI 营销策略助手
+<img width="2560" height="1318" alt="image" src="https://github.com/user-attachments/assets/219ade00-fde3-45d7-83ae-23ad46b2477d" />
 
 
 CampaignPilot 是一款基于 DeepSeek 大语言模型的 AI 营销策划辅助产品，旨在帮助用户将产品信息与营销需求转化为结构化的营销方案，并通过 AI 评估与优化机制，辅助用户识别策略问题、改进营销决策。
