@@ -6,6 +6,7 @@ AI-Powered Marketing Campaign Copilot | AI 营销策略助手
 CampaignPilot 是一款基于 DeepSeek 大语言模型的 AI 营销策划辅助产品，旨在帮助用户将产品信息与营销需求转化为结构化的营销方案，并通过 AI 评估与优化机制，辅助用户识别策略问题、改进营销决策。
 项目状态： V2 已上线，支持在线体验
 在线 Demo： https://campaign-pilot-one.vercel.app/
+访问说明： 本项目部署于 Vercel 平台。由于网络环境差异，中国大陆部分网络可能无法直接访问。如遇页面无法加载，建议切换至可正常访问 Vercel 的网络环境。
 
 一、项目背景
 1. WHY：为什么选择营销策划场景？
